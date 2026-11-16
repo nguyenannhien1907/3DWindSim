@@ -1,0 +1,369 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>3D Wind Simulation — Flask + Three.js</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<style>
+  :root {
+    --bg: #eef1f4; --surface: #ffffff; --surface-2: #e4e9ee;
+    --fg: #141a24; --muted: #5b6676; --line: #c7d0da;
+    --accent: #0e7490; --accent-soft: #cfeaf2;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg); font-family: system-ui, sans-serif; }
+  .wrap { max-width: 1320px; margin: 0 auto; padding: 18px 16px 40px; display: flex; flex-direction: column; gap: 16px; }
+  header { display: flex; justify-content: space-between; align-items: baseline; border-bottom: 1px solid var(--line); padding-bottom: 8px; flex-wrap: wrap; gap: 8px; }
+  header h1 { font-size: 1.3rem; margin: 0; font-family: monospace; }
+  header .tag { font-size: 0.75rem; color: var(--muted); font-family: monospace; }
+  .layout { display: grid; grid-template-columns: 260px 1fr; gap: 16px; }
+  @media (max-width: 860px) { .layout { grid-template-columns: 1fr; } }
+  .sidebar { display: flex; flex-direction: column; gap: 16px; }
+  .panel { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 16px; }
+  .panel h2 { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); margin: 0 0 12px; font-family: monospace; }
+  .field { margin-bottom: 16px; }
+  .field:last-child { margin-bottom: 0; }
+  .field label { display: flex; justify-content: space-between; font-size: 0.85rem; margin-bottom: 6px; }
+  .field label .val { font-family: monospace; color: var(--accent); font-weight: 600; }
+  .field input[type="range"] { width: 100%; accent-color: var(--accent); }
+  .field select { width: 100%; padding: 7px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface-2); font-size: 0.85rem; }
+  .owner-info { font-size: 0.82rem; line-height: 1.6; color: var(--fg); }
+  .owner-info span { color: var(--muted); font-family: monospace; font-size: 0.75rem; display: inline-block; width: 78px; }
+  .stage { position: relative; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+  .stage canvas { display: block; width: 100%; height: 460px; cursor: grab; }
+  .stage .hint { position: absolute; left: 10px; bottom: 10px; font-family: monospace; font-size: 0.68rem; color: var(--muted); background: rgba(255,255,255,0.8); padding: 4px 8px; border-radius: 6px; }
+  .stage .status { position: absolute; top: 10px; left: 10px; font-family: monospace; font-size: 0.72rem; color: var(--accent); background: rgba(255,255,255,0.85); padding: 4px 10px; border-radius: 6px; }
+  .stats-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+  @media (max-width: 640px) { .stats-row { grid-template-columns: 1fr; } }
+  .stat-card { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; }
+  .stat-card .name { font-weight: 600; font-size: 0.85rem; }
+  .stat-card .v { font-family: monospace; font-size: 1.3rem; font-weight: 700; }
+  .stat-card .l { font-size: 0.68rem; color: var(--muted); }
+  footer { font-size: 0.75rem; color: var(--muted); border-top: 1px solid var(--line); padding-top: 10px; display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>3D Wind Simulation — Flask Backend + Three.js</h1>
+    <span class="tag">GET /api/simulate executes Python calculations on each parameter change</span>
+  </header>
+
+  <div class="layout">
+    <div class="sidebar">
+      <div class="panel">
+        <h2>Wind Parameters</h2>
+        <div class="field">
+          <label for="w0">W₀ <span class="val" id="w0val">1.25 kPa</span></label>
+          <input type="range" id="w0" min="0.55" max="1.55" step="0.05" value="1.25">
+        </div>
+        <div class="field">
+          <label for="terrain">Terrain Category</label>
+          <select id="terrain">
+            <option value="A">A — open sea, coastal flatlands</option>
+            <option value="B" selected>B — suburban, open fields</option>
+            <option value="C">C — dense urban area</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="floors">Number of Floors <span class="val" id="floorsval">30</span></label>
+          <input type="range" id="floors" min="10" max="40" step="1" value="30">
+        </div>
+      </div>
+
+      <div class="panel">
+        <h2>Project Author</h2>
+        <div class="owner-info">
+          <div><span>Name:</span> <strong>Nguyen An Nhien</strong></div>
+          <div><span>Born:</span> 2010</div>
+          <div><span>School:</span> Vinschool CP</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="stage">
+      <canvas id="scene"></canvas>
+      <div class="status" id="statusBox">Calling /api/simulate…</div>
+      <div class="hint">drag to rotate · scroll to zoom · dynamic wind flow enabled</div>
+    </div>
+  </div>
+
+  <div class="stats-row" id="statsRow"></div>
+
+  <footer>
+    <div>
+      Every slider adjustment calls <code>fetch('/api/simulate?w0=...&terrain=...&floors=...')</code> —
+      Flask runs the Python structural solver (k(z), [K]{u}={F}) and returns JSON, updating the Three.js scene.
+    </div>
+    <div><strong>Nguyen An Nhien</strong> (2010) · Vinschool CP</div>
+  </footer>
+</div>
+
+<script>
+(function () {
+  "use strict";
+  var $ = function (id) { return document.getElementById(id); };
+  var state = { w0: 1.25, terrain: "B", floors: 30, sim: null };
+
+  // ---------- Call Flask Backend ----------
+  function fetchSim() {
+    var url = "/api/simulate?w0=" + state.w0 + "&terrain=" + state.terrain + "&floors=" + state.floors;
+    $("statusBox").textContent = "Calling /api/simulate…";
+    return fetch(url)
+      .then(function (r) {
+        if (!r.ok) throw new Error("HTTP " + r.status);
+        return r.json();
+      })
+      .then(function (data) {
+        state.sim = data;
+        $("statusBox").textContent = "/api/simulate OK — " + data.numFloors + " floors";
+        rebuildBuildings();
+        refreshStats();
+      })
+      .catch(function (err) {
+        $("statusBox").textContent = "API Error: " + err.message;
+      });
+  }
+
+  $("w0").addEventListener("input", function (e) {
+    state.w0 = parseFloat(e.target.value);
+    $("w0val").textContent = state.w0.toFixed(2) + " kPa";
+    fetchSim();
+  });
+  $("terrain").addEventListener("change", function (e) {
+    state.terrain = e.target.value;
+    fetchSim();
+  });
+  $("floors").addEventListener("input", function (e) {
+    state.floors = parseInt(e.target.value, 10);
+    $("floorsval").textContent = state.floors;
+    fetchSim();
+  });
+
+  // ---------- Three.js Scene ----------
+  var canvas = $("scene");
+  var renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  var scene = new THREE.Scene();
+  scene.background = new THREE.Color(0xeef1f4);
+  scene.fog = new THREE.Fog(0xeef1f4, 95, 230);
+
+  var camera = new THREE.PerspectiveCamera(42, 1, 0.1, 400);
+  var camTarget = new THREE.Vector3(0, 26, 0);
+  var camDist = 96, camTheta = 0.78, camPhi = 1.08;
+  function updateCamera() {
+    camera.position.set(
+      camTarget.x + camDist * Math.sin(camPhi) * Math.sin(camTheta),
+      camTarget.y + camDist * Math.cos(camPhi),
+      camTarget.z + camDist * Math.sin(camPhi) * Math.cos(camTheta)
+    );
+    camera.lookAt(camTarget);
+  }
+  updateCamera();
+
+  scene.add(new THREE.HemisphereLight(0xdfe9ef, 0x23262d, 0.42));
+  var sun = new THREE.DirectionalLight(0xffffff, 0.95);
+  sun.position.set(30, 50, 20);
+  scene.add(sun);
+  var fill = new THREE.DirectionalLight(0x8fd0e8, 0.18);
+  fill.position.set(-25, 20, -30);
+  scene.add(fill);
+
+  var grid = new THREE.GridHelper(120, 24, 0x5fd4ee, 0x5fd4ee);
+  grid.material.opacity = 0.15;
+  grid.material.transparent = true;
+  scene.add(grid);
+
+  // ---------- Wind Flow Particle System ----------
+  var particleCount = 500;
+  var particleGeo = new THREE.BufferGeometry();
+  var particlePositions = new Float32Array(particleCount * 3);
+  var particleSpeeds = new Float32Array(particleCount);
+
+  for (var i = 0; i < particleCount; i++) {
+    particlePositions[i * 3] = (Math.random() - 0.5) * 140 - 20;
+    particlePositions[i * 3 + 1] = Math.random() * 90;
+    particlePositions[i * 3 + 2] = (Math.random() - 0.5) * 90;
+    particleSpeeds[i] = 0.5 + Math.random() * 0.8;
+  }
+  particleGeo.setAttribute('position', new THREE.BufferAttribute(particlePositions, 3));
+
+  var particleMat = new THREE.PointsMaterial({
+    color: 0x0e7490,
+    size: 0.9,
+    transparent: true,
+    opacity: 0.5
+  });
+  var windParticles = new THREE.Points(particleGeo, particleMat);
+  scene.add(windParticles);
+
+  var clock = new THREE.Clock();
+
+  var buildingGroups = [];
+  var SPACING = 16;
+
+  function shapePath(kind, w) {
+    var shp = new THREE.Shape();
+    var hw = w / 2;
+    if (kind === "square") {
+      shp.moveTo(-hw, -hw); shp.lineTo(hw, -hw); shp.lineTo(hw, hw); shp.lineTo(-hw, hw); shp.closePath();
+    } else if (kind === "chamfer") {
+      var ch = w * 0.16;
+      shp.moveTo(-hw + ch, -hw); shp.lineTo(hw - ch, -hw); shp.lineTo(hw, -hw + ch);
+      shp.lineTo(hw, hw - ch); shp.lineTo(hw - ch, hw); shp.lineTo(-hw + ch, hw);
+      shp.lineTo(-hw, hw - ch); shp.lineTo(-hw, -hw + ch); shp.closePath();
+    } else {
+      var r = w * 0.32;
+      shp.moveTo(-hw + r, -hw); shp.lineTo(hw - r, -hw); shp.quadraticCurveTo(hw, -hw, hw, -hw + r);
+      shp.lineTo(hw, hw - r); shp.quadraticCurveTo(hw, hw, hw - r, hw);
+      shp.lineTo(-hw + r, hw); shp.quadraticCurveTo(-hw, hw, -hw, hw - r);
+      shp.lineTo(-hw, -hw + r); shp.quadraticCurveTo(-hw, -hw, -hw + r, -hw); shp.closePath();
+    }
+    return shp;
+  }
+
+  function pressureColor(t) {
+    var stops = [[0, [44,127,184]], [0.3, [120,198,121]], [0.55, [254,224,139]], [0.78, [244,109,67]], [1, [165,0,38]]];
+    for (var i = 0; i < stops.length - 1; i++) {
+      var a = stops[i], b = stops[i + 1];
+      if (t >= a[0] && t <= b[0]) {
+        var f = (t - a[0]) / (b[0] - a[0]);
+        return new THREE.Color(
+          (a[1][0] + f * (b[1][0] - a[1][0])) / 255,
+          (a[1][1] + f * (b[1][1] - a[1][1])) / 255,
+          (a[1][2] + f * (b[1][2] - a[1][2])) / 255
+        );
+      }
+    }
+    return new THREE.Color(1, 1, 1);
+  }
+
+  function rebuildBuildings() {
+    buildingGroups.forEach(function (bg) { scene.remove(bg.pivot); });
+    buildingGroups = [];
+    if (!state.sim) return;
+
+    var n = state.sim.numFloors;
+    var footprint = 9.5;
+    var floorHpx = state.sim.hFloor * 0.082 * 7.0;
+
+    var allP = [];
+    state.sim.shapes.forEach(function (s) { allP = allP.concat(state.sim.results[s.key].p); });
+    var pMin = Math.min.apply(null, allP), pMax = Math.max.apply(null, allP);
+
+    state.sim.shapes.forEach(function (s, idx) {
+      var pivot = new THREE.Object3D();
+      pivot.position.x = (idx - 1) * SPACING;
+      scene.add(pivot);
+      var group = new THREE.Group();
+      pivot.add(group);
+
+      var shp = shapePath(s.key, footprint);
+      var p = state.sim.results[s.key].p;
+      for (var i = 0; i < n; i++) {
+        var geo = new THREE.ExtrudeGeometry(shp, { depth: floorHpx * 0.96, bevelEnabled: false });
+        geo.rotateX(-Math.PI / 2);
+        geo.translate(0, i * floorHpx, 0);
+        var t = (p[i] - pMin) / (pMax - pMin || 1);
+        var mat = new THREE.MeshStandardMaterial({ color: pressureColor(t), roughness: 0.65 });
+        group.add(new THREE.Mesh(geo, mat));
+      }
+      var roofGeo = new THREE.ShapeGeometry(shp);
+      roofGeo.rotateX(-Math.PI / 2);
+      roofGeo.translate(0, n * floorHpx, 0);
+      group.add(new THREE.Mesh(roofGeo, new THREE.MeshStandardMaterial({ color: pressureColor(1), roughness: 0.5 })));
+
+      buildingGroups.push({ pivot: pivot, totalH: n * floorHpx, shape: s });
+    });
+
+    var maxTotalH = Math.max.apply(null, buildingGroups.map(function (bg) { return bg.totalH; }));
+    camTarget.set(0, maxTotalH * 0.46, 0);
+    camDist = Math.max(70, maxTotalH * 1.55);
+    updateCamera();
+  }
+
+  // ---------- Manual Orbit Controls ----------
+  var dragging = false, lastX = 0, lastY = 0;
+  canvas.addEventListener("pointerdown", function (e) {
+    dragging = true; lastX = e.clientX; lastY = e.clientY; canvas.setPointerCapture(e.pointerId);
+    canvas.style.cursor = "grabbing";
+  });
+  canvas.addEventListener("pointerup", function () { dragging = false; canvas.style.cursor = "grab"; });
+  canvas.addEventListener("pointermove", function (e) {
+    if (!dragging) return;
+    var dx = e.clientX - lastX, dy = e.clientY - lastY;
+    lastX = e.clientX; lastY = e.clientY;
+    camTheta -= dx * 0.006;
+    camPhi = Math.min(1.5, Math.max(0.35, camPhi - dy * 0.006));
+    updateCamera();
+  });
+  canvas.addEventListener("wheel", function (e) {
+    e.preventDefault();
+    camDist = Math.min(110, Math.max(28, camDist + e.deltaY * 0.04));
+    updateCamera();
+  }, { passive: false });
+
+  function resize() {
+    var w = canvas.clientWidth, h = canvas.clientHeight;
+    renderer.setSize(w, h, false);
+    camera.aspect = w / h;
+    camera.updateProjectionMatrix();
+  }
+  window.addEventListener("resize", resize);
+
+  function animate() {
+    requestAnimationFrame(animate);
+
+    var elapsedTime = clock.getElapsedTime();
+    var windVibe = state.w0;
+
+    // Animate wind particles flowing across
+    var positions = particleGeo.attributes.position.array;
+    for (var i = 0; i < particleCount; i++) {
+      positions[i * 3] += (1.0 + particleSpeeds[i] * windVibe * 1.6);
+      if (positions[i * 3] > 70) {
+        positions[i * 3] = -70;
+        positions[i * 3 + 1] = Math.random() * 90;
+        positions[i * 3 + 2] = (Math.random() - 0.5) * 90;
+      }
+    }
+    particleGeo.attributes.position.needsUpdate = true;
+
+    // Animate structural vibration / swaying response of buildings
+    buildingGroups.forEach(function (bg, idx) {
+      var r = state.sim ? state.sim.results[bg.shape.key] : null;
+      var topDisp = r ? r.topDisp : 50;
+      var amp = (topDisp / 1500) * (bg.totalH / 30);
+      var sway = Math.sin(elapsedTime * (3.5 + idx * 0.8) + idx * 2.0) * 0.0025 * windVibe * amp;
+      bg.pivot.rotation.z = sway;
+    });
+
+    renderer.render(scene, camera);
+  }
+
+  function fmt(n, d) { return n.toLocaleString("en-US", { minimumFractionDigits: d, maximumFractionDigits: d }); }
+
+  function refreshStats() {
+    var row = $("statsRow");
+    row.innerHTML = "";
+    state.sim.shapes.forEach(function (s) {
+      var r = state.sim.results[s.key];
+      var card = document.createElement("div");
+      card.className = "stat-card";
+      card.innerHTML =
+        '<div class="name" style="color:' + s.color + '">' + s.label + "</div>" +
+        '<div class="v">' + fmt(r.topDisp, 0) + ' mm</div>' +
+        '<div class="l">top displacement · base shear ' + fmt(r.baseShear, 0) + " kN</div>";
+      row.appendChild(card);
+    });
+  }
+
+  // ---------- Boot ----------
+  resize();
+  animate();
+  fetchSim();
+})();
+</script>
+</body>
+</html>
