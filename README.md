@@ -6,3 +6,18 @@ A 3D wind flow and aerodynamic load simulation tool. Built to model airflow beha
 ## Overview
 
 `3DWindSim` simulates wind velocity fields and visualizes how airflow interacts with 3D geometry. It combines a Python computational backend (`main.py`) with an interactive web-based visualization frontend (`index.html`).
+
+### Key Features
+* **3D Airflow  Modeling:** Simulates directional wind vectors, speed profiles, and flow behavior across a 3D domain.
+* **Web Visualization:** Renders the simulation environment, particle streamlines, or pressure/load distributions directly in the browser via `index.html`.
+* **Configurable Parameters:** Adjust wind speed, angle of attack, boundary conditions, or obstacle/building geometry to observe real-time aerodynamic responses.
+
+  ---
+
+## Project Structure
+
+```text
+3DWindSim/
+├── main.py       # Core simulation logic, numerical solver, and data processing
+├── index.html    # 3D rendering frontend and interactive controls
+└── README.md     # Project documentation
