@@ -21,3 +21,38 @@ A 3D wind flow and aerodynamic load simulation tool. Built to model airflow beha
 ├── main.py       # Core simulation logic, numerical solver, and data processing
 ├── index.html    # 3D rendering frontend and interactive controls
 └── README.md     # Project documentation
+```
+
+---
+
+## Getting Started
+
+### Prerequisites
+* **Python 3.8+**
+* **NumPy** (and any other packages imported in `main.py`)
+* A modern web browser (Chrome, Firefox, Edge, or Safari)
+
+### Installation & Usage
+
+1. **Clone the repository:**
+   ```bash
+   git clone https://github.com/nguyenannhien1907/3DWindSim.git
+   cd 3DWindSim
+   ```
+
+2. **Install dependencies:**
+   ```bash
+   pip install numpy
+   ```
+
+3. **Run the simulation backend:**
+   ```bash
+   python main.py
+   ```
+
+4. **Launch the 3D visualization:**
+   * Start a local server in the project directory:
+     ```bash
+     python -m http.server 8000
+     ```
+   * Open your browser and navigate to `http://localhost:8000` (or open `index.html` directly if your setup does not require a local server).
